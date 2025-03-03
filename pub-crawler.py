@@ -5,7 +5,6 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
-from urllib.parse import urlparse
 from random import uniform
 from openai import OpenAI
 import pandas as pd
@@ -61,7 +60,7 @@ def process_cookies_button_texts():
 
     return processed_cookies_button_texts
 
-def get_contents(url, driver, processed_cookies_button_texts):                          
+def get_contents(url, driver, processed_cookies_button_texts, operating_system):                          
     driver.get(url)
     time.sleep(uniform(2, 3))
 
@@ -69,20 +68,30 @@ def get_contents(url, driver, processed_cookies_button_texts):
         accept_button = driver.find_element(By.XPATH, processed_cookies_button_texts)
         accept_button.click()
     except NoSuchElementException:
-        if (path / "cookies_button_not_found.csv").exists():
-            cookies_button_not_found_df = pd.read_csv(path / "cookies_button_not_found.csv", header=0, index_col=False)
+        if (path / "cache" / "cookies_button_not_found.csv").exists():
+            cookies_button_not_found_df = pd.read_csv(path / "cache" / "cookies_button_not_found.csv", header=0, index_col=False)
         else:
             cookies_button_not_found_df = pd.DataFrame(columns=["url"])
         cookies_button_not_found_df.loc[len(cookies_button_not_found_df)] = [url]
-        cookies_button_not_found_df.to_csv(path / "cookies_button_not_found.csv", index=False)
+        cookies_button_not_found_df.to_csv(path / "cache" / "cookies_button_not_found.csv", index=False)
 
     body = driver.find_element("tag name", "body")
-    body.send_keys(Keys.COMMAND, 'a')
-    time.sleep(uniform(0.2, 0.3))
 
-    body.send_keys(Keys.COMMAND, 'c')
-    time.sleep(uniform(0.1, 0.2))      
+    if operating_system == "macos":
+        body.send_keys(Keys.COMMAND, 'a')
+        time.sleep(uniform(0.2, 0.3))
+        body.send_keys(Keys.COMMAND, 'c')
+        time.sleep(uniform(0.1, 0.2))     
+
+    elif operating_system == "windows":
+        body.send_keys(Keys.CONTROL, 'a')
+        time.sleep(uniform(0.2, 0.3))
+        body.send_keys(Keys.CONTROL, 'c')
+        time.sleep(uniform(0.1, 0.2))
     
+    else:
+        raise "OSInfoError"
+
     content = pyperclip.paste()
 
     time.sleep(uniform(1, 2))
@@ -120,18 +129,22 @@ if __name__ == "__main__":
     else:
         raise "MissingChromeDriverPathError"
     
-    driver_path = ChromeDriverPath
+    driver_path = Path(ChromeDriverPath)
     service = Service(driver_path)
     driver = webdriver.Chrome(service=service)
-    if (path / "results.csv").exists():
-        results_df = pd.read_csv(path / "results.csv", header=0, index_col=False)
+
+    cache_path = Path(path / "cache")
+    cache_path.mkdir(exist_ok=True)
+
+    if (path / "cache" / "results.csv").exists():
+        results_df = pd.read_csv(path / "cache" / "results.csv", header=0, index_col=False)
     else:
         results_df = pd.DataFrame(columns=["abstract", "if_relevant", "url"])
 
 
-    if not (path / "next_page.txt").exists():
-        (path / "next_page.txt").touch(exist_ok=True)
-    with open(path / "next_page.txt", "r") as f:
+    if not (path / "cache" / "next_page.txt").exists():
+        (path / "cache" / "next_page.txt").touch(exist_ok=True)
+    with open(path / "cache" / "next_page.txt", "r") as f:
         content = f.read().strip()
         if content:
             next_page = int(content)
@@ -140,12 +153,18 @@ if __name__ == "__main__":
     user_input_query = sys.argv[1]
     additional_requirements = sys.argv[2:]
 
-    if (path / "urls.csv").exists():
-        urls_df = pd.read_csv(path / "urls.csv", header=0, index_col=False)
+    if (path / "cache" / "urls.csv").exists():
+        urls_df = pd.read_csv(path / "cache" / "urls.csv", header=0, index_col=False)
     else:
         urls_df = pd.DataFrame(columns=["url"])
 
     processed_cookies_button_texts = process_cookies_button_texts()
+
+    if (path / "os.txt").exists():
+        with open(path / "os.txt", "r") as f:
+            operating_system = f.read()
+    else:
+        raise "MissingOSPathError"
 
     while True:
         if not len(urls_df):
@@ -153,25 +172,26 @@ if __name__ == "__main__":
                                                 query=user_input_query,
                                                 page_numer=str(next_page))
             next_page += 1
-            with open(path / "next_page.txt", "w") as f:
+            with open(path / "cache" / "next_page.txt", "w") as f:
                 f.write(str(next_page))
             urls_df = gather_urls(scraped_html=scraped_html, dataframe=urls_df)
             if not isinstance(urls_df, pd.DataFrame):
                 break
-            urls_df.to_csv(path / "urls.csv", index=False)
+            urls_df.to_csv(path / "cache" / "urls.csv", index=False)
         while len(urls_df):
             url = urls_df["url"][0]
             urls_df = urls_df.drop(index=0).reset_index(drop=True)
-            urls_df.to_csv(path / "urls.csv", index=False)
+            urls_df.to_csv(path / "cache" / "urls.csv", index=False)
             content = get_contents(url=url,
                                    driver=driver,
-                                   processed_cookies_button_texts=processed_cookies_button_texts)[:10000]
+                                   processed_cookies_button_texts=processed_cookies_button_texts[:10000],
+                                   operating_system=operating_system)
             abstract, if_relevant = process_with_openai_api(content=content,
                                                             additional_requirements=additional_requirements)
             results_df.loc[len(results_df)] = [abstract, if_relevant, url]
             no_dups_results_df = results_df.drop_duplicates(subset=["abstract", "url"])
             sorted_no_dups_results_df = no_dups_results_df.sort_values(by=["if_relevant", "abstract"],
                                                                        ascending=[False, True])
-            sorted_no_dups_results_df.to_csv("results.csv", index=False)
+            sorted_no_dups_results_df.to_csv("./cache/results.csv", index=False)
     
     driver.quit()

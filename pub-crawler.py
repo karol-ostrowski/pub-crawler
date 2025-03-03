@@ -105,7 +105,7 @@ def process_with_openai_api(content, additional_requirements):
     max_completion_tokens=3000,
     messages=[
     {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": f"After this sentence ends I will provide you a text with a lot of noise and an abstract of a scientific paper and your job is to provide the abstract exactly as it is, 1:1 without any changes and additional words and comments.\n{content}"}])
+    {"role": "user", "content": f"After this sentence ends I will provide you a text with a lot of noise and an abstract of a scientific paper and your job is to provide the abstract exactly as it is, 1:1 without any changes, additional words or comments.\n{content}"}])
     
     #compose requirements
     reqs = str()
@@ -117,7 +117,7 @@ def process_with_openai_api(content, additional_requirements):
     max_completion_tokens=1000,
     messages=[
     {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": f"given this response in double square brackets [[{completion1.choices[0].message}]], do you think this abstract matches requirements provided in the single square brackets?:[{reqs[:-1]}] your answer has to be just one word, either yes or no"}])
+    {"role": "user", "content": f"given the response in double square brackets [[{completion1.choices[0].message}]], do you think this abstract matches requirements provided in single square brackets?:[{reqs[:-1]}] your answer has to be just one word, either yes or no"}])
 
     return completion1.choices[0].message.content, completion2.choices[0].message.content
 
